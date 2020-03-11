@@ -55,6 +55,7 @@ class CIFAR10(Dataset):
 
             for i in range(1, 6):
                 path = self.root + '_{:d}'.format(i)
+                print(path)
                 x, y = self._load_batch(path)
                 self.imgs.append(x)
                 self.labels.append(y)
@@ -93,12 +94,12 @@ class CIFAR10(Dataset):
 def get_train_loader(opt, dataset=None):
     if dataset is None:
         dataset = CIFAR10(opt, train=True)
-    
+
     loader = DataLoader(
         dataset, opt.batch_size, drop_last=True, pin_memory=opt.pin_memory,
         sampler=SubsetRandomSampler(range(0, opt.num_train))
     )
-    
+
     if opt.device.type == 'cuda':
         return PreFetcher(loader)
     return loader
@@ -107,12 +108,12 @@ def get_train_loader(opt, dataset=None):
 def get_val_loader(opt, dataset=None):
     if dataset is None:
         dataset = CIFAR10(opt, train=True)
-    
+
     loader = DataLoader(
         dataset, opt.batch_size, drop_last=True, pin_memory=opt.pin_memory,
         sampler=SubsetRandomSampler(range(opt.num_train, opt.num_tot))
     )
-    
+
     if opt.device.type == 'cuda':
         return PreFetcher(loader)
     return loader
@@ -121,12 +122,12 @@ def get_val_loader(opt, dataset=None):
 def get_test_loader(opt, dataset=None):
     if dataset is None:
         dataset = CIFAR10(opt, train=False)
-        
+
     loader = DataLoader(
-        dataset, opt.batch_size, drop_last=True, 
+        dataset, opt.batch_size, drop_last=True,
         pin_memory=opt.pin_memory, shuffle=True
     )
-    
+
     if opt.device.type == 'cuda':
         return PreFetcher(loader)
     return loader

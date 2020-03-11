@@ -11,7 +11,7 @@ class Option:
     def __init__(self):
         # hyperparameters
         # initial learning rate
-        self.lr = 1e-3
+        self.lr = 0.005
         self.momentum = 0.9
         # learning rate decay
         self.lr_decay = 0.1
