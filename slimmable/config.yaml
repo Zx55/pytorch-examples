@@ -1,0 +1,48 @@
+training:
+    max_width: &max_width 1.0
+    min_width: &min_width 0.35
+    offset: &offset 0.05
+    num_sample: 4
+    val_width: [0.35, 0.5, 0.75, 1.0]
+    distillation:
+        enabled: true
+        temperature: 1
+        loss_weight: 1
+        hard_label: false
+
+model:
+    num_classes: 10
+    input_size: &input_size 32
+    width: [*min_width, *max_width, *offset]
+
+scheduler:
+    type: COSINE
+    base_lr: 0.1
+    warmup_lr: 0.1
+    warmup_steps: 0
+    min_lr: 0.0
+    max_iter: &max_iter 62500
+
+dataset:
+    type: CIFAR10
+    kwargs:
+        cifar10_path: ../data/
+        workers: 1
+        batch_size: 128
+        max_iter: *max_iter
+        num_train: 45000
+        num_total: 5000
+
+momentum: 0.9
+weight_decay: 0.0001
+nesterov: True
+
+start_val: 1000
+val_freq: 1000
+print_freq: 10
+
+random_seed: 0
+
+epoch: 20
+
+log_path: ./logs

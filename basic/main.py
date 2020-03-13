@@ -5,10 +5,12 @@ import warnings
 import torch.nn.functional as F
 import torch.optim as optim
 
-from data import CIFAR10, get_train_loader, get_val_loader, get_test_loader
+from data import get_cifar10
 # from models import mobilenet_v2
-from models import resnet18 as resnet
-from option import opt
+from basic.models import resnet18 as resnet
+from basic.option import opt
+
+CIFAR10, get_train_loader, get_val_loader, get_test_loader = get_cifar10()
 
 
 def main():
@@ -31,7 +33,8 @@ def main():
         factor=opt.lr_decay, threshold=opt.lr_decay_threshold)
 
     model.fit(train_loader, loss_fn, optimizer, opt.epochs, opt.device,
-              val=val_loader, scheduler=scheduler, metrics=['f1-score'], save=False)
+              val=val_loader, scheduler=scheduler, metrics=['f1-score'],
+              save=False)
     model.evaluate(test_loader, opt.device)
 
 

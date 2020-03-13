@@ -3,8 +3,9 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*/raw
+*/cifar-10-batches-py
 raw
 */visual
 visual
 **/.idea
+**/logs

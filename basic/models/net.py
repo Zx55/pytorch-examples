@@ -8,7 +8,7 @@ import torch
 from torch.nn import Module
 from tensorboardX import SummaryWriter
 
-from models.metric import Metric
+from .metric import Metric
 
 
 class Net(Module, metaclass=ABCMeta):

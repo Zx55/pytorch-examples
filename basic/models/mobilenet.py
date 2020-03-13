@@ -70,7 +70,7 @@ class MobileNetV2(Net):
             if multiplier > 1.0 else 1280
 
         self.preprocess = nn.Sequential(
-            nn.Conv2d(3, 32, 3, 1, bias=False),
+            nn.Conv2d(3, 32, 3, 2, 1, bias=False),
             nn.BatchNorm2d(32),
             nn.ReLU6(inplace=True)
         )

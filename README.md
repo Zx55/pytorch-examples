@@ -1,9 +1,15 @@
 # pytorch-examples
 
-A repo for introduing several examples of machine learning or deep learning using Pytorch.
+A repo for introduing several examples of deep learning algorithm using Pytorch.
 
-**Note1:** Run `data/get_dataset.sh` to download corresponding dataset in the `data/raw` folder.
+These examples run on Pytorch 1.1.0+.
 
-**Note2:** These examples run on Pytorch 1.1.0+.
+## Usage
 
-* Training CIFAR-10 on ResNet, MobileNet-V2
+Run `data/xxx/get_dataset.sh` to download corresponding dataset in the `data/raw` folder.
+
+## Implemention
+
+* ResNet
+
+* MobileNet-V2

@@ -21,7 +21,7 @@ class Option:
 
         # runtime settings
         # the root of dataset
-        self.root = './data/raw/cifar-10-batches-py/'
+        self.root = '../data/cifar10-2/raw/cifar-10-batches-py/'
         self.num_train = 45000
         self.num_tot = 50000
         # statistics of cifar-10
