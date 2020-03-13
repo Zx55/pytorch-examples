@@ -35,7 +35,7 @@ class USModule:
         if specific_ch is not None:
             self.cur_in_ch = specific_ch
         else:
-            self.cur_in_ch = make_divisible(self.in_ch * width / self.expand_ratio[0]) * self.expand_ratio[0]
+            self.cur_in_ch = int(make_divisible(self.in_ch * width / self.expand_ratio[0]) * self.expand_ratio[0])
 
         if self.group != 1:
             self.cur_group = self.cur_in_ch
@@ -47,7 +47,7 @@ class USModule:
         if specific_ch is not None:
             self.cur_out_ch = specific_ch
         else:
-            self.cur_out_ch = make_divisible(self.out_ch * width / self.expand_ratio[1]) / self.expand_ratio[1]
+            self.cur_out_ch = int(make_divisible(self.out_ch * width / self.expand_ratio[1]) * self.expand_ratio[1])
 
 
 class USConv2d(USModule, nn.Conv2d):
@@ -61,8 +61,7 @@ class USConv2d(USModule, nn.Conv2d):
     def forward(self, x):
         weight = self.weight[:self.cur_out_ch, :self.cur_in_ch, :, :]
         bias = None if self.bias is None else self.bias[:self.cur_out_ch]
-        return F.conv2d(x, weight, bias, self.stride, self.padding,
-                        self.dilation, self.cur_group)
+        return F.conv2d(x, weight, bias, self.stride, self.padding, self.dilation, self.cur_group)
 
 
 class USLinear(USModule, nn.Linear):
@@ -81,7 +80,7 @@ class USBatchNorm2d(USModule, nn.BatchNorm2d):
     def __init__(self, num_features, eps=1e-5, momentum=0.1, affine=True, us_switch=None, expand_ratio=1):
         us_switch = [False, True] if us_switch is None else us_switch
         super(USBatchNorm2d, self).__init__(None, num_features, None, us_switch, [1, expand_ratio])
-        super(USModule, self).__init__(num_features, eps, momentum, affine, track_running_stats=False)
+        super(USModule, self).__init__(num_features, eps, momentum, affine, track_running_stats=True)
 
     def forward(self, x):
         weight = self.weight[:self.cur_out_ch] if self.affine else self.weight
@@ -91,7 +90,3 @@ class USBatchNorm2d(USModule, nn.BatchNorm2d):
         running_var = self.running_var[:self.cur_out_ch]
 
         return F.batch_norm(x, running_mean, running_var, weight, bias, self.training, self.momentum, self.eps)
-
-    def bn_calibration(self):
-        self.reset_running_stats()
-        self.training = True

@@ -60,11 +60,11 @@ class USMobileNetV2(nn.Module):
         self.tail = nn.Sequential(
             USConv2d(blocks_out, self.last_channel, 1, 1, 0, bias=False,
                      us_switch=[True, False]),
-            USBatchNorm2d(self.last_channel),
+            nn.BatchNorm2d(self.last_channel),
             nn.ReLU6(inplace=True)
         )
         self.pool = nn.AvgPool2d(input_size // 32)
-        self.classifier = nn.Linear(self.last_channel, num_classes)
+        self.classifier = nn.Linear(self.last_channel * 4, num_classes)
 
         self._init_weights()
 
@@ -76,31 +76,10 @@ class USMobileNetV2(nn.Module):
         out = out.view(out.size(0), -1)
         return self.classifier(out)
 
-    def uniform_set_width(self, width_idx):
+    def uniform_set_width(self, width):
         for m in self.modules():
             if isinstance(m, USModule):
-                m.set_width(width_idx)
-
-    def reset_bn_post_stats(self, sample):
-        assert self.training is False
-        assert len(sample) > 0
-
-        bn_momentum = None
-        for m in self.modules():
-            if isinstance(m, US.USSyncBatchNorm2d):
-                m.running_mean.fill_(0)
-                m.running_var.fill_(1)
-                if bn_momentum is None:
-                    bn_momentum = m.momentum
-                m.momentum = 1.0
-                m.training = True
-
-        self.forward(sample[0].cuda())
-
-        for m in self.modules():
-            if isinstance(m, US.USSyncBatchNorm2d):
-                m.training = False
-                m.momentum = bn_momentum
+                m.set_width(width)
 
     def _init_weights(self):
         for m in self.modules():
@@ -122,7 +101,7 @@ class USMobileNetV2(nn.Module):
             # t, c, n, s
             [1, 16, 1, 1],
             [6, 24, 2, 2],
-            [6, 32, 3, 2],
+            [6, 24, 2, 1],
             [6, 64, 4, 2],
             [6, 96, 3, 1],
             [6, 160, 3, 2],

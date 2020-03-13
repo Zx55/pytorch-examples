@@ -16,9 +16,24 @@ def get_data_loader(config, last_iter=-1):
         raise KeyError('invalid dataset type')
 
 
-def get_optimizer(model, config, last_iter=-1):
-    optimizer = torch.optim.SGD(model.parameters(), config.scheduler.base_lr, momentum=config.momentum,
-                                weight_decay=config.weight_decay, nesterov=config.nesterov)
+def get_optimizer(model, config):
+    model_params = []
+    for params in model.parameters():
+        ps = list(params.size())
+        if len(ps) == 4 and ps[1] != 1:
+            weight_decay = config.optimizer.weight_decay
+        elif len(ps) == 2:
+            weight_decay = config.optimizer.weight_decay
+        else:
+            weight_decay = 0
+        item = {'params': params, 'weight_decay': weight_decay,
+                'lr': config.optimizer.base_lr, 'momentum': config.optimizer.momentum,
+                'nesterov': config.optimizer.nesterov}
+        model_params.append(item)
+    return torch.optim.SGD(model_params)
+
+
+def get_scheduler(optimizer, config, last_iter=-1):
     if config.scheduler.type == 'COSINE':
         scheduler = CosineLRScheduler(
             optimizer, config.scheduler.max_iter, config.scheduler.min_lr, config.scheduler.base_lr,
@@ -29,8 +44,7 @@ def get_optimizer(model, config, last_iter=-1):
             config.scheduler.warmup_lr, config.scheduler.warmup_steps, last_iter=last_iter)
     else:
         raise KeyError('invalid lr scheduler type')
-
-    return optimizer, scheduler
+    return scheduler
 
 
 def get_config(config_path):

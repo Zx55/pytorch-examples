@@ -57,14 +57,8 @@ class Bottleneck(nn.Module):
     def forward(self, x):
         out = self.residual(x)
         identity = x if self.down_sample is None else self.down_sample(x)
-        try:
-            out += identity
-        except RuntimeError:
-            print(self.down_sample)
-            print(out.size())
-            print(x.size())
-            print(identity.size())
-        return F.relu(out, inplace=True)
+        out += identity
+        F.relu(out, inplace=True)
 
 
 class ResNet(Net):

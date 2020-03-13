@@ -21,9 +21,9 @@ class Option:
 
         # runtime settings
         # the root of dataset
-        self.root = '../data/cifar10-2/raw/cifar-10-batches-py/'
+        self.cifar10_path = '../data/'
         self.num_train = 45000
-        self.num_tot = 50000
+        self.num_total = 50000
         # statistics of cifar-10
         self.mean = (0.4914, 0.4822, 0.4465)
         self.std = (0.2023, 0.1994, 0.2010)
@@ -36,7 +36,7 @@ class Option:
 
         self.print_freq = 200
         # number of processes used to load data
-        self.num_workers = 4
+        self.workers = 4
 
         self.use_gpu = True
         self._upgrade_device()

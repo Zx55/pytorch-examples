@@ -40,7 +40,7 @@ def accuracy(output, target, top_k=(1,)):
     max_k = max(top_k)
     batch_size = target.size(0)
 
-    _, pred = output.top_k(max_k, 1, True, True)
+    _, pred = output.topk(max_k, 1, True, True)
     pred = pred.t()
     correct = pred.eq(target.view(1, -1).expand_as(pred))
 

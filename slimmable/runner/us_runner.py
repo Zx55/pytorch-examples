@@ -1,36 +1,31 @@
 # -*- coding:utf-8  -*-
 
 import logging
+import os.path as path
+import random
 import time
 import torch
 import torch.nn as nn
-from .utils import AverageMeter, accuracy, LabelSmoothCELoss, KL, \
-    unique_width_sampler, calc_model_flops
+from .utils import AverageMeter, accuracy, LabelSmoothCELoss, KL
+from ..models.us_ops import USBatchNorm2d
 
 
 class USNetRunner:
-    def __init__(self, config):
+    def __init__(self, config, model):
         self.config = config
+        self.model = model
         self.logger = logging.getLogger('global_logger')
 
-        self.val_width_idx, num_width = self._get_val_width_idx()
-        self.width_sampler = unique_width_sampler(num_width, self.config.training.num_sample)
-
-    def train(self, train_loader, val_loader, model, optimizer, scheduler,
-              start_iter, tb_logger):
+    def train(self, train_loader, val_loader, optimizer, scheduler, tb_logger):
+        # meters
         batch_time = AverageMeter(self.config.print_freq)
         data_time = AverageMeter(self.config.print_freq)
-        # track stats of min switch, max switch and random switch
+        # track stats of min width, max width and random width
         losses = [AverageMeter(self.config.print_freq) for _ in range(3)]
         top1 = [AverageMeter(self.config.print_freq) for _ in range(3)]
         top5 = [AverageMeter(self.config.print_freq) for _ in range(3)]
 
-        # switch to train mode
-        model.train()
-
-        # calculate model flops
-        self.logger.info('init flops: {:.3f}'.format(calc_model_flops(model, self.config.model.input_size)))
-
+        # loss_fn
         label_smooth = self.config.get('label_smooth', 0.0)
         if label_smooth > 0:
             criterion = LabelSmoothCELoss(label_smooth, 1000)
@@ -39,45 +34,48 @@ class USNetRunner:
             criterion = nn.CrossEntropyLoss()
         distill_loss = KL(self.config.training.distillation.temperature)
 
+        max_width, min_width = self.config.training.max_width, self.config.training.min_width
+        cur_step = 0
         end = time.time()
-        for _ in range(self.config.epoch):
-            for i, (x, y) in enumerate(train_loader):
-                x = x.cuda()
-                y = y.cuda()
+        for e in range(self.config.training.epoch):
+            data_time.update(time.time() - end)
 
-                cur_step = start_iter + i
+            # train
+            self.model.train()
+            for batch_idx, (x, y) in enumerate(train_loader):
                 scheduler.step(cur_step)
                 cur_lr = scheduler.get_lr()[0]
+                cur_step += 1
 
-                # measure data loading time
-                data_time.update(time.time() - end)
-
-                # forward
+                x, y = x.cuda(), y.cuda()
                 optimizer.zero_grad()
-                max_width_pred = None
-                for idx in range(self.config.training.num_sample):
-                    top1_m, top5_m, loss_m = self._set_width(model, idx, top1, top5, losses)
 
-                    output = model(x)
+                sample_width = [max_width, min_width] + \
+                               [random.uniform(min_width, max_width) for _ in range(self.config.training.num_sample - 2)]
+
+                max_pred = None
+                for width in sample_width:
+                    # sandwich rule
+                    top1_m, top5_m, loss_m = self._set_width(width, top1, top5, losses)
+
+                    out = self.model(x)
                     if self.config.training.distillation.enabled:
-                        # max width model use ground truth
-                        if idx == 0:
-                            max_width_pred = output.detach()
-                            cls_loss = criterion(output, y)
-                        # other width use max model prediction
+                        if width == max_width:
+                            max_pred = out.detach()
+                            loss = criterion(out, y)
                         else:
-                            cls_loss = self.config.training.distillation.loss_weight * distill_loss(output, max_width_pred)
+                            loss = self.config.training.distillation.loss_weight * distill_loss(out, max_pred)
                             if self.config.training.distillation.hard_label:
-                                cls_loss += criterion(output, y)
+                                loss += criterion(out, y)
                     else:
-                        cls_loss = criterion(output, y)
+                        loss = criterion(out, y)
 
-                    acc1, acc5 = accuracy(output, y, top_k=(1, 5))
-                    loss_m.update(cls_loss.item())
+                    acc1, acc5 = accuracy(out, y, top_k=(1, 5))
+                    loss_m.update(loss.item())
                     top1_m.update(acc1.item())
                     top5_m.update(acc5.item())
 
-                    cls_loss.backward()
+                    loss.backward()
 
                 optimizer.step()
                 batch_time.update(time.time() - end)
@@ -85,14 +83,14 @@ class USNetRunner:
                 if cur_step % self.config.print_freq == 0:
                     tb_logger.add_scalar('lr', cur_lr, cur_step)
                     self.logger.info('-' * 80)
-                    self.logger.info('Iter: [{0}/{1}]\t'
+                    self.logger.info('Epoch: [{0}/{1}]\tIter: [{2}/{3}]\t'
                                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                                      'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                                      'LR {lr:.4f}'.format(
-                                         cur_step, len(train_loader), batch_time=batch_time,
-                                         data_time=data_time, lr=cur_lr))
+                                      e, self.config.training.epoch, batch_idx, len(train_loader),
+                                      batch_time=batch_time, data_time=data_time, lr=cur_lr))
 
-                    titles = ['max_width', 'min_width', 'random_width']
+                    titles = ['min_width', 'max_width', 'random_width']
                     for idx in range(3):
                         tb_logger.add_scalar('loss_train@{}'.format(titles[idx]), losses[idx].avg, cur_step)
                         tb_logger.add_scalar('acc1_train@{}'.format(titles[idx]), top1[idx].avg, cur_step)
@@ -104,44 +102,54 @@ class USNetRunner:
                                          .format(title=titles[idx], loss=losses[idx],
                                                  top1=top1[idx], top5=top5[idx]))
 
-                if cur_step >= self.config.start_val and cur_step % self.config.val_freq == 0:
-                    val_loss, val_acc1, val_acc5 = self.validate(val_loader, model, x)
-
-                    for j in range(len(val_loss)):
-                        tb_logger.add_scalar('loss_val@{}'.format(self.config.training.val_width[j]), val_loss[j], cur_step)
-                        tb_logger.add_scalar('acc1_val@{}'.format(self.config.training.val_width[j]), val_acc1[j], cur_step)
-                        tb_logger.add_scalar('acc5_val@{}'.format(self.config.training.val_width[j]), val_acc5[j], cur_step)
-
                 end = time.time()
 
-    def validate(self, val_loader, model, sample):
+            for loss_m, top1_m, top5_m in zip(losses, top1, top5):
+                loss_m.reset()
+                top1_m.reset()
+                top5_m.reset()
+
+            # validation
+            val_loss, val_acc1, val_acc5 = self.validate(val_loader, self.config.training.val_width,
+                                                         calibration=True, train_loader=train_loader)
+
+            for i in range(len(val_loss)):
+                tb_logger.add_scalar('loss_val@{}'.format(self.config.training.val_width[i]), val_loss[i], cur_step)
+                tb_logger.add_scalar('acc1_val@{}'.format(self.config.training.val_width[i]), val_acc1[i], cur_step)
+                tb_logger.add_scalar('acc5_val@{}'.format(self.config.training.val_width[i]), val_acc5[i], cur_step)
+
+        self.save()
+
+    def validate(self, val_loader, val_width, calibration=False, train_loader=None):
         batch_time = AverageMeter(0)
-        losses = [AverageMeter(0) for _ in range(len(self.val_width_idx))]
-        top1 = [AverageMeter(0) for _ in range(len(self.val_width_idx))]
-        top5 = [AverageMeter(0) for _ in range(len(self.val_width_idx))]
+        losses = [AverageMeter(0) for _ in range(len(val_width))]
+        top1 = [AverageMeter(0) for _ in range(len(val_width))]
+        top5 = [AverageMeter(0) for _ in range(len(val_width))]
         final_loss, final_top1, final_top5 = [], [], []
 
         # switch to evaluate mode
-        model.eval()
+        self.model.eval()
 
         criterion = nn.CrossEntropyLoss()
         end = time.time()
 
         with torch.no_grad():
-            for i in range(len(self.val_width_idx)):
+            for idx, width in enumerate(val_width):
                 self.logger.info('-' * 80)
-                self.logger.info('Evaluating [{}/{}]@{}'.format(i + 1, len(self.val_width_idx),
-                                                                self.config.training.val_width[i]))
-                top1_m, top5_m, loss_m = self._set_width(model, i, top1, top5, losses)
-                model.reset_bn_post_stats(list([sample]))
+                self.logger.info('Evaluating [{}/{}]@{}'.format(idx + 1, len(val_width), width))
+                top1_m, top5_m, loss_m = self._set_width(width, top1, top5, losses, idx=idx)
+
+                if calibration:
+                    assert train_loader is not None
+                    self.calibrate(train_loader)
 
                 for j, (x, y) in enumerate(val_loader):
                     x, y = x.cuda(), y.cuda()
                     num = x.size(0)
 
-                    output = model(x)
-                    loss = criterion(output, y)
-                    acc1, acc5 = accuracy(output.data, y, top_k=(1, 5))
+                    out = self.model(x)
+                    loss = criterion(out, y)
+                    acc1, acc5 = accuracy(out.data, y, top_k=(1, 5))
 
                     loss_m.update(loss.item(), num)
                     top1_m.update(acc1.item(), num)
@@ -162,35 +170,65 @@ class USNetRunner:
                 self.logger.info('Prec@1 {:.3f}\tPrec@5 {:.3f}\tLoss {:.3f}\ttotal_num={}'
                                  .format(final_top1[-1], final_top5[-1], final_loss[-1], loss_m.count))
 
-            model.train()
             return final_loss, final_top1, final_top5
 
-    def _set_width(self, model, i, top1, top5, losses):
-        if model.training:
-            # max width
-            if i == 0:
-                model.uniform_set_width(-1)
-                return top1[0], top5[0], losses[0]
-            # min width
-            elif i == 1:
-                model.uniform_set_width(0)
-                return top1[1], top5[1], losses[1]
-            # (n - 2) random width
+    def infer(self, test_loader, train_loader):
+        self.validate(test_loader, self.config.test_width, calibration=True, train_loader=train_loader)
+
+    def calibrate(self, train_loader):
+        self.model.eval()
+
+        momentum_bk = None
+        for m in self.model.modules():
+            if isinstance(m, USBatchNorm2d):
+                m.reset_running_stats()
+                m.training = True
+                if momentum_bk is None:
+                    momentum_bk = m.momentum
+                m.momentum = 1.0
+
+        with torch.no_grad():
+            for batch_idx, (x, _) in enumerate(train_loader):
+                if batch_idx == self.config.training.calibration_batches:
+                    break
+
+                x = x.cuda()
+                self.model(x)
+
+        for m in self.model.modules():
+            if isinstance(m, USBatchNorm2d):
+                m.momentum = momentum_bk
+                m.training = False
+
+    def save(self, optimizer=None, scheduler=None, epoch=None):
+        name = '\\'.join(path.dirname(__file__).split('\\')[:-1])
+        name += '\\checkpoints\\' + str(self.model.__class__.__name__) + '_'
+        name = time.strftime(name + '%m%d_%H%M.pth')
+
+        state = {'model': self.model.state_dict()}
+        if optimizer is not None:
+            state['optimizer'] = optimizer.state_dict()
+        if scheduler is not None:
+            state['scheduler'] = scheduler.state_dict()
+        if epoch is not None:
+            state['epoch'] = epoch
+
+        torch.save(state, name)
+        self.logger.info('model saved at {}'.format(name))
+
+    def load(self, checkpoint):
+        self.model.load_state_dict(checkpoint['model'])
+
+    def _set_width(self, width, top1, top5, loss, idx=None):
+        self.model.uniform_set_width(width)
+
+        if self.model.training:
+            if width == self.config.training.min_width:
+                return top1[0], top5[0], loss[0]
+            elif width == self.config.training.max_width:
+                return top1[1], top5[1], loss[1]
             else:
-                model.uniform_set_width(next(self.width_sampler))
-                return top1[2], top5[2], losses[2]
+                return top1[2], top5[2], loss[2]
         else:
-            # choose validation width index
-            model.uniform_set_width(self.val_width_idx[i])
-            return top1[i], top5[i], losses[i]
-
-    def _get_val_width_idx(self):
-        val_width = self.config.training.val_width
-        min_width = self.config.training.min_width
-        max_width = self.config.training.max_width
-        offset = self.config.training.offset
-        num_width = int((max_width - min_width) / offset + 1e-4) + 1
-        all_width = [round(min_width + i * offset, 3) for i in range(num_width)]
-
-        idx = list(map(lambda width: all_width.index(width), val_width))
-        return idx, num_width
+            assert idx is not None
+            return top1[idx], top5[idx], loss[idx]

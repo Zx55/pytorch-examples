@@ -24,6 +24,9 @@ def get_cifar10_loader(config, last_iter):
         config.cifar10_path, transform=transform_train, train=True, download=False)
 
     val_dataset = torchvision.datasets.CIFAR10(
+        config.cifar10_path, transform=transform_val, train=True, download=False)
+
+    test_dataset = torchvision.datasets.CIFAR10(
         config.cifar10_path, transform=transform_val, train=False, download=False)
 
     # Set up data loader
@@ -35,4 +38,8 @@ def get_cifar10_loader(config, last_iter):
         val_dataset, batch_size=config.batch_size, shuffle=False, num_workers=config.workers,
         pin_memory=True, sampler=SubsetRandomSampler(range(config.num_train, config.num_total)))
 
-    return train_loader, val_loader
+    test_loader = DataLoader(
+        test_dataset, batch_size=config.batch_size, shuffle=False, num_workers=config.workers,
+        pin_memory=True, sampler=SubsetRandomSampler(range(0, 10000)))
+
+    return train_loader, val_loader, test_loader

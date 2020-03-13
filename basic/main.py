@@ -5,26 +5,19 @@ import warnings
 import torch.nn.functional as F
 import torch.optim as optim
 
-from data import get_cifar10
-# from models import mobilenet_v2
-from basic.models import resnet18 as resnet
+from basic.data import get_cifar10_loader
+from basic.models import mobilenet_v2
+# from basic.models import resnet18 as resnet
 from basic.option import opt
 
-CIFAR10, get_train_loader, get_val_loader, get_test_loader = get_cifar10()
+train_loader, val_loader, test_loader = get_cifar10_loader(opt, -1)
 
 
 def main():
     warnings.filterwarnings('ignore')
 
-    train_data = CIFAR10(opt, train=True)
-    test_data = CIFAR10(opt, train=False)
-
-    train_loader = get_train_loader(opt, train_data)
-    val_loader = get_val_loader(opt, train_data)
-    test_loader = get_test_loader(opt, test_data)
-
-    model = resnet(num_classes=10, visual=True)
-    # model = mobilenet_v2(num_classes=10, input_size=32)
+    # model = resnet(num_classes=10, visual=True)
+    model = mobilenet_v2(num_classes=10, input_size=32)
     loss_fn = F.cross_entropy
     optimizer = optim.SGD(model.parameters(), opt.lr, opt.momentum,
                           nesterov=True, weight_decay=opt.reg)
